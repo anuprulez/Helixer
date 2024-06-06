@@ -8,7 +8,7 @@ from helixer.prediction.HelixerModel import HelixerModel, HelixerSequence
 
 
 from tensorflow.keras.layers import MultiHeadAttention, LayerNormalization, Dropout, Layer
-from tensorflow.keras.layers import Dense, Embedding
+from tensorflow.keras.layers import Dense, Embedding, GlobalAveragePooling1D, Input
 from tensorflow.keras.models import Sequential
 
 
@@ -120,7 +120,7 @@ class HybridModel(HelixerModel):
         # do not use recurrent dropout, but dropout on the output of the LSTM stack
         if self.dropout2 > 0.0:
             x = Dropout(self.dropout2)(x)'''
-        
+        print("After CNN: ", x.shape) 
         ### Replace BLSTM by Transformer encoder
         embed_dim = self.pool_size * self.filter_depth #128
         ff_dim = 128
@@ -129,20 +129,23 @@ class HybridModel(HelixerModel):
         n_heads = 2
         vocab_size = 4
             
-        inputs = Input(shape=(max_len,))
-        embedding_layer = TokenAndPositionEmbedding(max_len, vocab_size, embed_dim)
-        x = embedding_layer(inputs)
+        #inputs = Input(shape=(max_len,))
+        #embedding_layer = TokenAndPositionEmbedding(max_len, vocab_size, embed_dim)
+        #x = embedding_layer(inputs)
         transformer_block = TransformerBlock(embed_dim, n_heads, ff_dim)
         x, weights = transformer_block(x)
-        x = GlobalAveragePooling1D()(x)
+        #x = GlobalAveragePooling1D()(x)
         x = Dropout(dropout)(x)
         x = Dense(ff_dim, activation="relu")(x)
         x = Dropout(dropout)(x)
         #outputs = Dense(vocab_size, activation="sigmoid")(x)
-
+        print("after Transformer: ", x.shape)
         outputs = self.model_hat((x, coverage_input))
 
         model = Model(inputs=model_input, outputs=outputs)
+        model.summary()
+        #import sys
+        #sys.exit()
         return model
 
     def model_hat(self, penultimate_layers):
