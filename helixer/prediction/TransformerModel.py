@@ -34,16 +34,16 @@ class TransformerBlock(Layer):
 
 
 class TokenAndPositionEmbedding(Layer):
-    def __init__(self, maxlen, vocab_size, embed_dim):
+    def __init__(self, maxlen, embed_dim):
         super(TokenAndPositionEmbedding, self).__init__()
-        self.token_emb = Embedding(input_dim=vocab_size, output_dim=embed_dim, mask_zero=True)
+        #self.token_emb = Embedding(input_dim=vocab_size, output_dim=embed_dim, mask_zero=True)
         self.pos_emb = Embedding(input_dim=maxlen, output_dim=embed_dim, mask_zero=True)
 
     def call(self, x):
         maxlen = tf.shape(x)[-1]
         positions = tf.range(start=0, limit=maxlen, delta=1)
         positions = self.pos_emb(positions)
-        x = self.token_emb(x)
+        #x = self.token_emb(x)
         return x + positions
 
 
@@ -123,15 +123,15 @@ class HybridModel(HelixerModel):
         print("After CNN: ", x.shape) 
         ### Replace BLSTM by Transformer encoder
         embed_dim = self.pool_size * self.filter_depth #128
-        ff_dim = 128
+        ff_dim = 256
         max_len = 21384
         dropout = 0.1
-        n_heads = 2
+        n_heads = 4
         vocab_size = 4
             
         #inputs = Input(shape=(max_len,))
-        #embedding_layer = TokenAndPositionEmbedding(max_len, vocab_size, embed_dim)
-        #x = embedding_layer(inputs)
+        #embedding_layer = TokenAndPositionEmbedding(max_len, embed_dim)
+        #x = embedding_layer(x)
         transformer_block = TransformerBlock(embed_dim, n_heads, ff_dim)
         x, weights = transformer_block(x)
         #x = GlobalAveragePooling1D()(x)
@@ -144,8 +144,8 @@ class HybridModel(HelixerModel):
 
         model = Model(inputs=model_input, outputs=outputs)
         model.summary()
-        #import sys
-        #sys.exit()
+        import sys
+        sys.exit()
         return model
 
     def model_hat(self, penultimate_layers):

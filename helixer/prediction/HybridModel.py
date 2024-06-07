@@ -84,6 +84,7 @@ class HybridModel(HelixerModel):
         outputs = self.model_hat((x, coverage_input))
 
         model = Model(inputs=model_input, outputs=outputs)
+        model.summary()
         return model
 
     def model_hat(self, penultimate_layers):
