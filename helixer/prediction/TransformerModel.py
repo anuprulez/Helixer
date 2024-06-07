@@ -13,11 +13,11 @@ from tensorflow.keras.models import Sequential
 
 
 class TransformerBlock(Layer):
-    def __init__(self, embed_dim, num_heads, ff_dim, rate=0.1):
+    def __init__(self, d_model, num_heads, ff_dim, rate=0.1):
         super(TransformerBlock, self).__init__()
-        self.att = MultiHeadAttention(num_heads=num_heads, key_dim=embed_dim, dropout=rate)
+        self.mha = MultiHeadAttention(num_heads=num_heads, key_dim=d_model, dropout=rate)
         self.ffn = Sequential(
-            [Dense(ff_dim, activation="relu"), Dense(embed_dim)]
+            [Dense(ff_dim, activation="relu"), Dense(d_model)]
         )
         self.layernorm1 = LayerNormalization(epsilon=1e-6)
         self.layernorm2 = LayerNormalization(epsilon=1e-6)
@@ -25,19 +25,19 @@ class TransformerBlock(Layer):
         self.dropout2 = Dropout(rate)
 
     def call(self, inputs, training):
-        attn_output, attention_scores = self.att(inputs, inputs, inputs, return_attention_scores=True, training=training)
+        attn_output = self.mha(inputs, inputs, inputs, training=training)
         attn_output = self.dropout1(attn_output, training=training)
         out1 = self.layernorm1(inputs + attn_output)
         ffn_output = self.ffn(out1)
         ffn_output = self.dropout2(ffn_output, training=training)
-        return self.layernorm2(out1 + ffn_output), attention_scores
+        return self.layernorm2(out1 + ffn_output)
 
 
 class TokenAndPositionEmbedding(Layer):
-    def __init__(self, maxlen, embed_dim):
+    def __init__(self, maxlen, d_model):
         super(TokenAndPositionEmbedding, self).__init__()
         #self.token_emb = Embedding(input_dim=vocab_size, output_dim=embed_dim, mask_zero=True)
-        self.pos_emb = Embedding(input_dim=maxlen, output_dim=embed_dim, mask_zero=True)
+        self.pos_emb = Embedding(input_dim=maxlen, output_dim=d_model, mask_zero=True)
 
     def call(self, x):
         maxlen = tf.shape(x)[-1]
@@ -45,6 +45,26 @@ class TokenAndPositionEmbedding(Layer):
         positions = self.pos_emb(positions)
         #x = self.token_emb(x)
         return x + positions
+
+        
+class PositionalEncoding(tf.keras.layers.Layer):
+    def __init__(self, d_model, max_len=30000):
+        super(PositionalEncoding, self).__init__()
+        self.d_model = d_model
+        self.max_len = max_len
+
+    def build(self, input_shape):
+        pe = np.zeros((self.max_len, self.d_model))
+        position = np.expand_dims(np.arange(0, self.max_len), 1)
+        div_term = np.exp(np.arange(0, self.d_model, 2) * -(np.log(10000.0) / self.d_model))
+        pe[:, 0::2] = np.sin(position * div_term)
+        pe[:, 1::2] = np.cos(position * div_term)
+        self.pe = tf.convert_to_tensor(pe, dtype=tf.float32)
+
+    def call(self, x):
+        x = x + self.pe[:tf.shape(x)[1], :]
+        return x
+
 
 
 class HybridSequence(HelixerSequence):
@@ -120,20 +140,29 @@ class HybridModel(HelixerModel):
         # do not use recurrent dropout, but dropout on the output of the LSTM stack
         if self.dropout2 > 0.0:
             x = Dropout(self.dropout2)(x)'''
+            
         print("After CNN: ", x.shape) 
         ### Replace BLSTM by Transformer encoder
-        embed_dim = self.pool_size * self.filter_depth #128
-        ff_dim = 256
+        d_model = self.pool_size * self.filter_depth #128
+        ff_dim = 2048
         max_len = 21384
         dropout = 0.1
         n_heads = 4
         vocab_size = 4
-            
+        num_encoder_layers = 1
         #inputs = Input(shape=(max_len,))
         #embedding_layer = TokenAndPositionEmbedding(max_len, embed_dim)
         #x = embedding_layer(x)
-        transformer_block = TransformerBlock(embed_dim, n_heads, ff_dim)
-        x, weights = transformer_block(x)
+        pos_encoding = PositionalEncoding(d_model, max_len=max_len)
+        x *= tf.math.sqrt(tf.cast(tf.shape(x)[2], tf.float32))
+        print("After sqrt: ", x.shape) 
+        x = pos_encoding(x)
+        print("After pos_encoding: ", x.shape)
+        transformer_blocks = [TransformerBlock(d_model, num_heads, ff_dim) for _ in range(num_encoder_layers)]
+        x = transformer_blocks(x)
+        print("After transformer_blocks: ", x.shape)
+        #transformer_block = TransformerBlock(d_model, n_heads, ff_dim)
+        #x, weights = transformer_block(x)
         #x = GlobalAveragePooling1D()(x)
         x = Dropout(dropout)(x)
         x = Dense(ff_dim, activation="relu")(x)
